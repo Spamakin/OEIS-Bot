@@ -7,7 +7,16 @@ import urllib, json, discord
 
 bot = commands.Bot(command_prefix='!')
 
-@bot.command(name="printSequence")
+prior10Commands = {}
+MAXSIZE = 10
+# queryDict = {}
+# queryDict["query"] = ""
+# queryDict["author"] = 0
+# queryDict["result"] = 0
+
+
+
+@bot.command(name="printSequence", pass_context=True)
 async def printing(ctx, query: str):
 
     search = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(0)
@@ -16,6 +25,11 @@ async def printing(ctx, query: str):
         if int(data["count"]) > 0 and data["results"] == None:
             await ctx.send("Too many results returned. Please make your request more specific")
             return
+        
+        queryDict = {}
+        queryDict["query"] = query
+        queryDict["result"] = 0
+        prior10Commands[str(ctx.message.author.id)] = queryDict
         
         if int(data["count"]) == 0:
             await ctx.send("No results found.")
@@ -31,16 +45,19 @@ async def on_reaction_add(reaction, user):
     if user.bot:
         print("bot self reacted")
     else:
-        msg = reaction.message.content
-        contentArray = msg.splitlines()
-        result = contentArray[1][8:]
-        newResult = int(result) + 1
-        query = contentArray[2][7:]
-        newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
-        with urllib.request.urlopen(newSearch) as url:
-            data = json.loads(url.read().decode())
-            searchResult = data["results"][0]
-            await reaction.message.edit(content=searchResult["name"] + '\n' + 'Result: ' + str(newResult) + '\n' + 'Query: ' + query)
+        msg = reaction.message
+        if str(user.id) in prior10Commands:
+            currentQueryDict = prior10Commands[str(user.id)]
+            currentResult = currentQueryDict["result"]
+            newResult = currentResult + 1
+            currentQueryDict["result"] = newResult
+            query = currentQueryDict["query"]
+            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
+            prior10Commands[str(msg.id)] = currentQueryDict
+            with urllib.request.urlopen(newSearch) as url:
+                data = json.loads(url.read().decode())
+                searchResult = data["results"][0]
+                await reaction.message.edit(content=searchResult["name"])
 
 with open("BOT_TOKEN.txt", "r") as token_file:
     TOKEN = token_file.read()
