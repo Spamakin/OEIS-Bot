@@ -1,5 +1,5 @@
 # TODO: 
-#       Pass query and result and stuff to reaction event
+#       Deal with if person spams command over and over
 #       Make sure only person who sent command can edit message
 
 from discord.ext import commands
@@ -30,13 +30,17 @@ async def printing(ctx, query: str):
         queryDict["query"] = query
         queryDict["result"] = 0
         prior10Commands[str(ctx.message.author.id)] = queryDict
+
+        # remove the oldest query
+        if len(prior10Commands) == MAXSIZE:
+            del prior10Commands[next(iter(prior10Commands))]
         
         if int(data["count"]) == 0:
             await ctx.send("No results found.")
             return
         
         firstResult = data["results"][0]
-        message = await ctx.send(firstResult["name"] + '\n' + 'Result: 0' + '\n' + 'Query: ' + query)
+        message = await ctx.send(firstResult["name"])
         await message.add_reaction('◀️')
         await message.add_reaction('▶️')
 
@@ -44,12 +48,30 @@ async def printing(ctx, query: str):
 async def on_reaction_add(reaction, user):
     if user.bot:
         print("bot self reacted")
-    else:
+    elif reaction.emoji == '▶️':
         msg = reaction.message
         if str(user.id) in prior10Commands:
             currentQueryDict = prior10Commands[str(user.id)]
             currentResult = currentQueryDict["result"]
             newResult = currentResult + 1
+            currentQueryDict["result"] = newResult
+            query = currentQueryDict["query"]
+            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
+            prior10Commands[str(msg.id)] = currentQueryDict
+            with urllib.request.urlopen(newSearch) as url:
+                data = json.loads(url.read().decode())
+                searchResult = data["results"][0]
+                await reaction.message.edit(content=searchResult["name"])
+    elif reaction.emoji == '◀️':
+        msg = reaction.message
+        if str(user.id) in prior10Commands:
+            currentQueryDict = prior10Commands[str(user.id)]
+            currentResult = currentQueryDict["result"]
+            newResult = 0
+            if (currentResult == 0):
+                newResult = 0
+            else:
+                newResult = currentResult - 1
             currentQueryDict["result"] = newResult
             query = currentQueryDict["query"]
             newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
