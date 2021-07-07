@@ -1,9 +1,12 @@
 # TODO: 
 #       Deal with if person spams command over and over
-#       Make sure only person who sent command can edit message
+#       Test MAXSIZE limit
+#       See how it works on 2 servers at once
+#       Deal with *'s in message
 
+from typing import Sequence
 from discord.ext import commands
-import urllib, json, discord
+import urllib, json
 
 bot = commands.Bot(command_prefix='!')
 
@@ -29,18 +32,22 @@ async def printing(ctx, query: str):
         queryDict = {}
         queryDict["query"] = query
         queryDict["result"] = 0
-        prior10Commands[str(ctx.message.author.id)] = queryDict
+        queryDict["author"] = ctx.message.author.id
+        
 
         # remove the oldest query
         if len(prior10Commands) == MAXSIZE:
             del prior10Commands[next(iter(prior10Commands))]
         
         if int(data["count"]) == 0:
-            await ctx.send("No results found.")
+            message = await ctx.send("No results found.")
             return
         
         firstResult = data["results"][0]
-        message = await ctx.send(firstResult["name"])
+        queryDict["count"] = data["count"]
+        sequence: str = firstResult["data"].replace(',', ", ")
+        message = await ctx.send(firstResult["name"] + '\n' + sequence)
+        prior10Commands[str(message.id)] = queryDict
         await message.add_reaction('◀️')
         await message.add_reaction('▶️')
 
@@ -50,10 +57,15 @@ async def on_reaction_add(reaction, user):
         print("bot self reacted")
     elif reaction.emoji == '▶️':
         msg = reaction.message
-        if str(user.id) in prior10Commands:
-            currentQueryDict = prior10Commands[str(user.id)]
+        if str(msg.id) in prior10Commands and user.id == prior10Commands[str(msg.id)]["author"]:
+            currentQueryDict = prior10Commands[str(msg.id)]
             currentResult = currentQueryDict["result"]
-            newResult = currentResult + 1
+            maxCount = currentQueryDict["count"]
+            newResult: int = 0
+            if currentResult == maxCount - 1:
+                newResult = currentResult
+            else:
+                newResult = currentResult + 1
             currentQueryDict["result"] = newResult
             query = currentQueryDict["query"]
             newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
@@ -61,11 +73,12 @@ async def on_reaction_add(reaction, user):
             with urllib.request.urlopen(newSearch) as url:
                 data = json.loads(url.read().decode())
                 searchResult = data["results"][0]
-                await reaction.message.edit(content=searchResult["name"])
+                sequence: str = searchResult["data"].replace(',', ", ")
+                await reaction.message.edit(content=(searchResult["name"] + '\n' + sequence))
     elif reaction.emoji == '◀️':
         msg = reaction.message
-        if str(user.id) in prior10Commands:
-            currentQueryDict = prior10Commands[str(user.id)]
+        if str(msg.id) in prior10Commands and user.id == prior10Commands[str(msg.id)]["author"]:
+            currentQueryDict = prior10Commands[str(msg.id)]
             currentResult = currentQueryDict["result"]
             newResult = 0
             if (currentResult == 0):
@@ -79,7 +92,8 @@ async def on_reaction_add(reaction, user):
             with urllib.request.urlopen(newSearch) as url:
                 data = json.loads(url.read().decode())
                 searchResult = data["results"][0]
-                await reaction.message.edit(content=searchResult["name"])
+                sequence: str = searchResult["data"].replace(',', ", ")
+                await reaction.message.edit(content=(searchResult["name"] + '\n' + sequence))
 
 with open("BOT_TOKEN.txt", "r") as token_file:
     TOKEN = token_file.read()
