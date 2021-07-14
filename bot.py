@@ -1,14 +1,6 @@
-# TODO: 
-#       Deal with if person spams command over and over
-#       Test MAXSIZE limit
-#       See how it works on 2 servers at once
-#       Deal with *'s in message
-
-from typing import Sequence
 from discord.ext import commands
 import urllib, json
-
-bot = commands.Bot(command_prefix='!')
+import discord
 
 prior10Commands = {}
 MAXSIZE = 10
@@ -17,16 +9,73 @@ MAXSIZE = 10
 # queryDict["author"] = 0
 # queryDict["result"] = 0
 
+class oeis_bot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix=commands.when_mentioned_or('!'))
+    
+    async def on_ready(self):
+        print("ready")
+
+bot = oeis_bot()
+
+class scroll_view(discord.ui.View):
+
+    @discord.ui.button(style=discord.ButtonStyle.blurple, emoji=discord.PartialEmoji(name='◀️'))
+    async def scrollBackward(self, button: discord.ui.Button, interaction: discord.Interaction):
+        msg = interaction.message
+        if str(msg.id) in prior10Commands and interaction.user.id == prior10Commands[str(msg.id)]["author"]:
+            currentQueryDict = prior10Commands[str(msg.id)]
+            currentResult = currentQueryDict["result"]
+            newResult: int = 0
+            if currentResult == 0:
+                newResult = 0
+            else:
+                newResult = currentResult - 1
+            currentQueryDict["result"] = newResult
+            query = currentQueryDict["query"]
+            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
+            prior10Commands[str(msg.id)] = currentQueryDict
+            with urllib.request.urlopen(newSearch) as url:
+                data = json.loads(url.read().decode())
+                searchResult = data["results"][0]
+                sequence: str = searchResult["data"].replace(',', ", ")
+                new_message:str = searchResult["name"] + '\n' + sequence
+                await interaction.response.edit_message(content=new_message, view=self)
+    
+    @discord.ui.button(style=discord.ButtonStyle.blurple, emoji=discord.PartialEmoji(name='▶️'))
+    async def scrollForward(self, button: discord.ui.Button, interaction: discord.Interaction):
+        msg = interaction.message
+        if str(msg.id) in prior10Commands and interaction.user.id == prior10Commands[str(msg.id)]["author"]:
+            currentQueryDict = prior10Commands[str(msg.id)]
+            currentResult = currentQueryDict["result"]
+            maxCount = currentQueryDict["count"]
+            newResult: int = 0
+            if currentResult == maxCount - 1:
+                newResult = currentResult
+            else:
+                newResult = currentResult + 1
+            currentQueryDict["result"] = newResult
+            query = currentQueryDict["query"]
+            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
+            prior10Commands[str(msg.id)] = currentQueryDict
+            with urllib.request.urlopen(newSearch) as url:
+                data = json.loads(url.read().decode())
+                searchResult = data["results"][0]
+                sequence: str = searchResult["data"].replace(',', ", ")
+                new_message:str = searchResult["name"] + '\n' + sequence
+                await interaction.response.edit_message(content=new_message, view=self)
 
 
-@bot.command(name="printSequence", pass_context=True)
-async def printing(ctx, query: str):
+@bot.command()
+async def printSequence(ctx: commands.Context, *query: str):
+    query = ''.join(query)
+    query = query.replace(' ', '')
 
-    search = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(0)
+    search = "https://oeis.org/search?fmt=json&q=" + query + "&start=0"
     with urllib.request.urlopen(search) as url:
         data = json.loads(url.read().decode())
         if int(data["count"]) > 0 and data["results"] == None:
-            await ctx.send("Too many results returned. Please make your request more specific")
+            await ctx.send(content="Too many results returned. Please make your request more specific")
             return
         
         queryDict = {}
@@ -46,54 +95,10 @@ async def printing(ctx, query: str):
         firstResult = data["results"][0]
         queryDict["count"] = data["count"]
         sequence: str = firstResult["data"].replace(',', ", ")
-        message = await ctx.send(firstResult["name"] + '\n' + sequence)
+        search = firstResult["name"] + '\n' + sequence
+        message = await ctx.send(content=search, view=scroll_view())
         prior10Commands[str(message.id)] = queryDict
-        await message.add_reaction('◀️')
-        await message.add_reaction('▶️')
 
-@bot.event
-async def on_reaction_add(reaction, user):
-    if user.bot:
-        print("bot self reacted")
-    elif reaction.emoji == '▶️':
-        msg = reaction.message
-        if str(msg.id) in prior10Commands and user.id == prior10Commands[str(msg.id)]["author"]:
-            currentQueryDict = prior10Commands[str(msg.id)]
-            currentResult = currentQueryDict["result"]
-            maxCount = currentQueryDict["count"]
-            newResult: int = 0
-            if currentResult == maxCount - 1:
-                newResult = currentResult
-            else:
-                newResult = currentResult + 1
-            currentQueryDict["result"] = newResult
-            query = currentQueryDict["query"]
-            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
-            prior10Commands[str(msg.id)] = currentQueryDict
-            with urllib.request.urlopen(newSearch) as url:
-                data = json.loads(url.read().decode())
-                searchResult = data["results"][0]
-                sequence: str = searchResult["data"].replace(',', ", ")
-                await reaction.message.edit(content=(searchResult["name"] + '\n' + sequence))
-    elif reaction.emoji == '◀️':
-        msg = reaction.message
-        if str(msg.id) in prior10Commands and user.id == prior10Commands[str(msg.id)]["author"]:
-            currentQueryDict = prior10Commands[str(msg.id)]
-            currentResult = currentQueryDict["result"]
-            newResult = 0
-            if (currentResult == 0):
-                newResult = 0
-            else:
-                newResult = currentResult - 1
-            currentQueryDict["result"] = newResult
-            query = currentQueryDict["query"]
-            newSearch = "https://oeis.org/search?fmt=json&q=" + query + "&start=" + str(newResult)
-            prior10Commands[str(msg.id)] = currentQueryDict
-            with urllib.request.urlopen(newSearch) as url:
-                data = json.loads(url.read().decode())
-                searchResult = data["results"][0]
-                sequence: str = searchResult["data"].replace(',', ", ")
-                await reaction.message.edit(content=(searchResult["name"] + '\n' + sequence))
 
 with open("BOT_TOKEN.txt", "r") as token_file:
     TOKEN = token_file.read()
