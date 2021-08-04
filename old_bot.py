@@ -32,21 +32,21 @@ async def printing(ctx, *query: str):
         if int(data["count"]) > 0 and data["results"] == None:
             await ctx.send("Too many results returned. Please make your request more specific")
             return
-        
+
         queryDict = {}
         queryDict["query"] = query
         queryDict["result"] = 0
         queryDict["author"] = ctx.message.author.id
-        
+
 
         # remove the oldest query
         if len(prior10Commands) == MAXSIZE:
             del prior10Commands[next(iter(prior10Commands))]
-        
+
         if int(data["count"]) == 0:
             message = await ctx.send("No results found.")
             return
-        
+
         firstResult = data["results"][0]
         queryDict["count"] = data["count"]
         sequence: str = firstResult["data"].replace(',', ", ")
